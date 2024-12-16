@@ -1,4 +1,4 @@
-# Mantine Vite template
+# City Energy Planner
 
 ## Features
 

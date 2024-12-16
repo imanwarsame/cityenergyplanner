@@ -1,10 +1,10 @@
+import MapCanvas from '@/components/MapCanvas/MapCanvas';
 import { ColorSchemeToggle } from '../components/ColorSchemeToggle/ColorSchemeToggle';
-import { Welcome } from '../components/Welcome/Welcome';
 
 export function HomePage() {
   return (
     <>
-      <Welcome />
+      <MapCanvas />
       <ColorSchemeToggle />
     </>
   );

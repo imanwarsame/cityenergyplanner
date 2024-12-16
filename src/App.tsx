@@ -1,4 +1,5 @@
 import '@mantine/core/styles.css';
+import 'mapbox-gl/dist/mapbox-gl.css';
 
 import { MantineProvider } from '@mantine/core';
 import { Router } from './Router';
