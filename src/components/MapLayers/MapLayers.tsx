@@ -8,7 +8,8 @@ import {
   LngLatBounds,
 } from 'mapbox-gl';
 import { Layer, Marker, NavigationControl, useMap } from 'react-map-gl';
-import { ActionIcon, Button, Card, Stack, Switch, Title, Tooltip } from '@mantine/core';
+import { Accordion, ActionIcon, Button, Stack, Switch, Tooltip } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 
 type MapCoords = {
   coordinates: any;
@@ -28,7 +29,7 @@ const buildingsLayer: FillExtrusionLayerSpecification = {
   'source-layer': 'building',
   filter: ['==', 'extrude', 'true'],
   type: 'fill-extrusion',
-  minzoom: 5,
+  minzoom: 15,
   paint: {
     'fill-extrusion-color': [
       'match',
@@ -114,14 +115,13 @@ export default function MapLayers() {
       industrial: 1.5,
       commercial: 0.9,
       residential: 0.01,
-      default: 0.01,
     };
 
     return landSuitabilityScore[landUseType] || landSuitabilityScore.residential; //Default to residential score
   };
 
   //Function to determine building suitability score based on its type
-  const getBuildingSuitabilityScore = (buildingType: string): number => {
+  const getBuildingSuitabilityScore = (building: GeoJSON.Feature): number => {
     const buildingSuitability: Record<string, number> = {
       commercial: 1.0,
       industrial: 0.9,
@@ -135,8 +135,26 @@ export default function MapLayers() {
       default: 0.2,
     };
 
-    //Return the suitability score for the building type or default if type is unknown
-    return buildingSuitability[buildingType] || buildingSuitability.default;
+    //Get building type from properties
+    const buildingType = building.properties?.type || 'default';
+
+    //Calculate area of the building from its polygon geometry
+    const area = turf.area(building.geometry); //Area in square meters
+
+    //Get height of the building from its properties (assuming 'height' is available)
+    const height = building.properties?.height || 0; //Default height is 0 if not available
+
+    //Calculate the volume (Area * Height)
+    const volume = area * height; //Volume in cubic meters
+
+    //Suitability score based on building type
+    const suitabilityScore = buildingSuitability[buildingType] || buildingSuitability.default;
+
+    //Optional: You can adjust the suitability score based on the volume if desired
+    //For example, the higher the volume, the higher the score could be
+    const adjustedSuitabilityScore = suitabilityScore * (volume / 100000);
+
+    return adjustedSuitabilityScore;
   };
 
   const getOptimalLocation = (
@@ -178,9 +196,7 @@ export default function MapLayers() {
       const score =
         featuresToCalculateWith === FeatureType.Land
           ? getLandUseScore(zone.properties.class)
-          : getBuildingSuitabilityScore(zone.properties.type);
-
-      console.log(zone);
+          : getBuildingSuitabilityScore(zone);
 
       //If score is above a certain threshold, mark it as suitable
       if (score > 0.5) {
@@ -236,9 +252,16 @@ export default function MapLayers() {
         featuresToCalculateWith === FeatureType.Land ? landUseData : buildingUseData,
         featuresToCalculateWith
       );
-      console.log('optimal locations', optimalLocation);
 
-      optimalLocation && setMarker(optimalLocation);
+      if (optimalLocation === null) {
+        notifications.show({
+          title: 'No location found',
+          message: 'Could not find any buildings/high value location to put plant',
+          color: 'orange',
+        });
+      } else {
+        setMarker(optimalLocation);
+      }
     }
   };
 
@@ -261,50 +284,53 @@ export default function MapLayers() {
       )}
 
       {/* Mantine Layer Toggle Controls */}
-      <Card
-        shadow="sm"
-        p="md"
+      <Accordion
+        defaultValue="controls"
         radius="md"
         style={{
           position: 'absolute',
           top: 10,
           left: 10,
-          backgroundColor: 'white',
+          backgroundColor: 'rgba(255, 255, 255, 0.9)', // Slightly transparent background
         }}
       >
-        <Title order={4}>Toggle Layers</Title>
-        <Stack gap="sm" mt="sm">
-          <Switch
-            checked={visibleLayers.landUse}
-            onChange={() => toggleLayer('landUse')}
-            label="Land Use"
-          />
-          <Switch
-            checked={visibleLayers.buildings}
-            onChange={() => toggleLayer('buildings')}
-            label="3D Buildings"
-          />
-          <Button
-            onClick={() => handleCalculateOptimalLocations(FeatureType.Land)}
-            fullWidth
-            variant="light"
-          >
-            Find Optimal Power Plant Location using Land
-          </Button>
-          <Button
-            onClick={() => handleCalculateOptimalLocations(FeatureType.Buildings)}
-            fullWidth
-            variant="light"
-          >
-            Find Optimal Power Plant Location using Buildings
-          </Button>
-          <Tooltip label="Clear marker">
-            <Button onClick={() => setMarker(null)} fullWidth variant="light" color="red">
-              <IconTrash />
-            </Button>
-          </Tooltip>
-        </Stack>
-      </Card>
+        <Accordion.Item value="controls">
+          <Accordion.Control>Controls</Accordion.Control>
+          <Accordion.Panel>
+            <Stack gap="sm" mt="sm">
+              <Switch
+                checked={visibleLayers.landUse}
+                onChange={() => toggleLayer('landUse')}
+                label="Land Use"
+              />
+              <Switch
+                checked={visibleLayers.buildings}
+                onChange={() => toggleLayer('buildings')}
+                label="3D Buildings"
+              />
+              <Button
+                onClick={() => handleCalculateOptimalLocations(FeatureType.Land)}
+                fullWidth
+                variant="light"
+              >
+                Find Optimal Location using Land
+              </Button>
+              <Button
+                onClick={() => handleCalculateOptimalLocations(FeatureType.Buildings)}
+                fullWidth
+                variant="light"
+              >
+                Find Optimal Location using Buildings
+              </Button>
+              <Tooltip label="Clear marker">
+                <Button onClick={() => setMarker(null)} fullWidth variant="light" color="red">
+                  <IconTrash />
+                </Button>
+              </Tooltip>
+            </Stack>
+          </Accordion.Panel>
+        </Accordion.Item>
+      </Accordion>
     </>
   );
 }

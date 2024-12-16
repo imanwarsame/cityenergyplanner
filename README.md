@@ -1,4 +1,4 @@
-# City Energy Planner
+# Energy Planner
 
 ## Features
 
