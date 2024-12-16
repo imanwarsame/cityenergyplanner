@@ -10,6 +10,7 @@ import {
 import { Layer, Marker, NavigationControl, useMap } from 'react-map-gl';
 import { Accordion, ActionIcon, Button, Stack, Switch, Tooltip } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import Legend from '../Legend/Legend';
 
 type MapCoords = {
   coordinates: any;
@@ -327,6 +328,14 @@ export default function MapLayers() {
                   <IconTrash />
                 </Button>
               </Tooltip>
+            </Stack>
+          </Accordion.Panel>
+        </Accordion.Item>
+        <Accordion.Item value="legend">
+          <Accordion.Control>Legend</Accordion.Control>
+          <Accordion.Panel>
+            <Stack gap="sm" mt="sm">
+              <Legend />
             </Stack>
           </Accordion.Panel>
         </Accordion.Item>
