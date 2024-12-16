@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { IconSolarPanel2 } from '@tabler/icons-react';
+import { IconSolarPanel2, IconTrash } from '@tabler/icons-react';
 import * as turf from '@turf/turf';
 import {
   FillExtrusionLayerSpecification,
@@ -8,19 +8,22 @@ import {
   LngLatBounds,
 } from 'mapbox-gl';
 import { Layer, Marker, NavigationControl, useMap } from 'react-map-gl';
-import { Button, Card, Stack, Switch, Title } from '@mantine/core';
-
-type LandUseType = 'industrial' | 'commercial' | 'residential';
+import { ActionIcon, Button, Card, Stack, Switch, Title, Tooltip } from '@mantine/core';
 
 type MapCoords = {
   coordinates: any;
   score: any;
 };
 
+enum FeatureType {
+  Land,
+  Buildings,
+}
+
 //#region Layers
 
 const buildingsLayer: FillExtrusionLayerSpecification = {
-  id: 'add-3d-buildings',
+  id: '3d-buildings',
   source: 'composite',
   'source-layer': 'building',
   filter: ['==', 'extrude', 'true'],
@@ -90,13 +93,6 @@ const landUseLayer: FillLayerSpecification = {
 export default function MapLayers() {
   //#region Properties
 
-  //Define the energy suitability scores for each land use type
-  const solarPanelSuitability: Record<LandUseType, number> = {
-    industrial: 1.5,
-    commercial: 0.9,
-    residential: 0.01,
-  };
-
   //#endregion
 
   //#region Hooks
@@ -113,13 +109,40 @@ export default function MapLayers() {
   //#region Functions
 
   //Function to get the suitability score based on land use type
-  const getLandUseScore = (landUseType: LandUseType) => {
-    return solarPanelSuitability[landUseType] || solarPanelSuitability.residential; //Default to residential score
+  const getLandUseScore = (landUseType: string) => {
+    const landSuitabilityScore: Record<string, number> = {
+      industrial: 1.5,
+      commercial: 0.9,
+      residential: 0.01,
+      default: 0.01,
+    };
+
+    return landSuitabilityScore[landUseType] || landSuitabilityScore.residential; //Default to residential score
+  };
+
+  //Function to determine building suitability score based on its type
+  const getBuildingSuitabilityScore = (buildingType: string): number => {
+    const buildingSuitability: Record<string, number> = {
+      commercial: 1.0,
+      industrial: 0.9,
+      residential: 0.3,
+      office: 0.7,
+      government: 0.5,
+      school: 0.6,
+      hospital: 0.8,
+      train_station: 0.85,
+      apartments: 0.4,
+      default: 0.2,
+    };
+
+    //Return the suitability score for the building type or default if type is unknown
+    return buildingSuitability[buildingType] || buildingSuitability.default;
   };
 
   const getOptimalLocation = (
     mapBounds: LngLatBounds | null,
-    landUseData: GeoJSONFeature[]
+    usageFeatures: GeoJSONFeature[],
+    featuresToCalculateWith: FeatureType
   ): MapCoords | null => {
     if (!mapBounds) {
       return null;
@@ -133,8 +156,8 @@ export default function MapLayers() {
     //Create a bounding box polygon based on the map bounds
     const bboxPolygon = turf.bboxPolygon([west, south, east, north]);
 
-    //Filter land use data within the bounds of the map view
-    const featuresWithinBounds = landUseData.filter((feature) => {
+    //Filter features within the bounds of the map view
+    const featuresWithinBounds = usageFeatures.filter((feature) => {
       if (feature.geometry.type === 'Polygon') {
         //Create the polygon from the feature's coordinates
         const polygon = turf.polygon(feature.geometry.coordinates);
@@ -152,7 +175,12 @@ export default function MapLayers() {
     let weightedY = 0;
 
     featuresWithinBounds.forEach((zone: any) => {
-      const score = getLandUseScore(zone.properties.class);
+      const score =
+        featuresToCalculateWith === FeatureType.Land
+          ? getLandUseScore(zone.properties.class)
+          : getBuildingSuitabilityScore(zone.properties.type);
+
+      console.log(zone);
 
       //If score is above a certain threshold, mark it as suitable
       if (score > 0.5) {
@@ -193,14 +221,21 @@ export default function MapLayers() {
   };
 
   //Capture current map bounds when the button is clicked
-  const handleCalculateOptimalLocations = () => {
+  const handleCalculateOptimalLocations = (featuresToCalculateWith: FeatureType) => {
     if (map) {
       const bounds = map.getBounds();
       const landUseData = map.querySourceFeatures('composite', {
         sourceLayer: 'landuse',
       });
+      const buildingUseData = map.querySourceFeatures('composite', {
+        sourceLayer: 'building', //The source layer for buildings, you can switch this out for landuse if you'd like
+      });
 
-      const optimalLocation = getOptimalLocation(bounds, landUseData);
+      const optimalLocation = getOptimalLocation(
+        bounds,
+        featuresToCalculateWith === FeatureType.Land ? landUseData : buildingUseData,
+        featuresToCalculateWith
+      );
       console.log('optimal locations', optimalLocation);
 
       optimalLocation && setMarker(optimalLocation);
@@ -219,7 +254,9 @@ export default function MapLayers() {
       {/* Place Markers based on calculated optimal locations */}
       {marker && (
         <Marker longitude={marker.coordinates[0]} latitude={marker.coordinates[1]} anchor="bottom">
-          <IconSolarPanel2 color="yellow" size={50} />
+          <ActionIcon color="yellow" size={50} radius="xl">
+            <IconSolarPanel2 />
+          </ActionIcon>
         </Marker>
       )}
 
@@ -247,9 +284,25 @@ export default function MapLayers() {
             onChange={() => toggleLayer('buildings')}
             label="3D Buildings"
           />
-          <Button onClick={handleCalculateOptimalLocations} fullWidth variant="light">
-            Find Optimal Solar Panel Locations
+          <Button
+            onClick={() => handleCalculateOptimalLocations(FeatureType.Land)}
+            fullWidth
+            variant="light"
+          >
+            Find Optimal Power Plant Location using Land
           </Button>
+          <Button
+            onClick={() => handleCalculateOptimalLocations(FeatureType.Buildings)}
+            fullWidth
+            variant="light"
+          >
+            Find Optimal Power Plant Location using Buildings
+          </Button>
+          <Tooltip label="Clear marker">
+            <Button onClick={() => setMarker(null)} fullWidth variant="light" color="red">
+              <IconTrash />
+            </Button>
+          </Tooltip>
         </Stack>
       </Card>
     </>
